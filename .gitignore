@@ -1,0 +1,18 @@
+# Go build and test artifacts
+*.test
+*.test.exe
+*.out
+coverage.*
+.gocache/
+.publish-worktree/
+
+# Local build output
+bin/
+dist/
+build/
+
+# Editor and OS files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
