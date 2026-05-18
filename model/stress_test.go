@@ -1,4 +1,4 @@
-package model
+package model_test
 
 import (
 	"fmt"
@@ -7,6 +7,9 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/DarkInno/hj1239-go-sdk/model"
+	"github.com/DarkInno/hj1239-go-sdk/packet"
 )
 
 // ============================================================
@@ -25,7 +28,7 @@ func TestStressSequential100K(t *testing.T) {
 	start := time.Now()
 
 	for i := 0; i < N; i++ {
-		engine := NewEngineDataDPFSCR(
+		engine := model.NewEngineDataDPFSCR(
 			float64(i%120), float64(1000+i%3000), 101.3, 15.0+float64(i%30),
 			400.0-float64(i%100), 200.0-float64(i%50),
 			250.0, 220.0, 3.0+float64(i%5), 85.0+float64(i%20), 80.0,
@@ -36,15 +39,15 @@ func TestStressSequential100K(t *testing.T) {
 		)
 		engineRaw, _ := engine.Encode()
 
-		pkt, _ := BuildPlatformPacket(0x02, 0xFE, vin, 0x01, engineRaw)
-		wire, _ := EncodePlatformPacket(pkt)
+		pkt, _ := packet.BuildPlatformPacket(0x02, 0xFE, vin, 0x01, engineRaw)
+		wire, _ := packet.EncodePlatformPacket(pkt)
 
-		if !VerifyChecksum(wire) {
+		if !packet.VerifyChecksum(wire) {
 			checksumErrors++
 		}
 
-		parsed, _ := ParsePlatformPacket(wire)
-		decoded, _ := DecodeDataUnit(parsed.CommandFlag, parsed.DataUnit)
+		parsed, _ := packet.ParsePlatformPacket(wire)
+		decoded, _ := packet.DecodeDataUnit(parsed.CommandFlag, parsed.DataUnit)
 		_ = decoded
 
 		atomic.AddInt64(&totalBytes, int64(len(wire)))
@@ -88,7 +91,7 @@ func TestStressConcurrent50K(t *testing.T) {
 			vin := fmt.Sprintf("C%02dVIN%010d", workerID, workerID)
 
 			for i := 0; i < perWorker; i++ {
-				engine := NewEngineDataDPFSCR(
+				engine := model.NewEngineDataDPFSCR(
 					rng.Float64()*120, rng.Float64()*4000+800, 101.3, rng.Float64()*40,
 					rng.Float64()*500, rng.Float64()*300,
 					rng.Float64()*400, rng.Float64()*400, rng.Float64()*10, rng.Float64()*30+70, rng.Float64()*100,
@@ -99,14 +102,14 @@ func TestStressConcurrent50K(t *testing.T) {
 				)
 				engineRaw, _ := engine.Encode()
 
-				pkt, _ := BuildPlatformPacket(0x02, 0xFE, vin, 0x01, engineRaw)
-				wire, _ := EncodePlatformPacket(pkt)
+				pkt, _ := packet.BuildPlatformPacket(0x02, 0xFE, vin, 0x01, engineRaw)
+				wire, _ := packet.EncodePlatformPacket(pkt)
 
-				if !VerifyChecksum(wire) {
+				if !packet.VerifyChecksum(wire) {
 					atomic.AddInt64(&checksumErrors, 1)
 				}
 
-				parsed, err := ParsePlatformPacket(wire)
+				parsed, err := packet.ParsePlatformPacket(wire)
 				if err != nil {
 					atomic.AddInt64(&checksumErrors, 1)
 					continue
@@ -117,7 +120,7 @@ func TestStressConcurrent50K(t *testing.T) {
 					continue
 				}
 
-				_, err = DecodeDataUnit(parsed.CommandFlag, parsed.DataUnit)
+				_, err = packet.DecodeDataUnit(parsed.CommandFlag, parsed.DataUnit)
 				if err != nil {
 					atomic.AddInt64(&checksumErrors, 1)
 				}
@@ -167,54 +170,54 @@ func TestStressAllCommands(t *testing.T) {
 		wg.Add(1)
 		go func(cmd byte, name string) {
 			defer wg.Done()
-			vin := fmt.Sprintf("CMDVIN%08d%s", cmd, "0000")
+			vin := fmt.Sprintf("SCMD%02xVIN%08d", cmd, int(cmd))
 			perCmd := N / len(commands)
 
 			for i := 0; i < perCmd; i++ {
 				var data []byte
 				switch cmd {
 				case 0x01:
-					v := &VehicleLoginCode{
-						Time:      GB1239Time{Year: 24, Month: 3, Day: 15, Hour: 8, Minute: 0, Second: 0},
+					v := &model.VehicleLoginCode{
+						Time:      model.GB1239Time{Year: 24, Month: 3, Day: 15, Hour: 8, Minute: 0, Second: 0},
 						SerialNum: uint16(i),
 						ICCID:     fmt.Sprintf("ICCID%015d", i),
 						AuthData:  []byte(vin),
-						LoginTime: GB1239Time{Year: 24, Month: 3, Day: 15, Hour: 8, Minute: 0, Second: 1},
+						LoginTime: model.GB1239Time{Year: 24, Month: 3, Day: 15, Hour: 8, Minute: 0, Second: 1},
 					}
 					data, _ = v.Encode()
 				case 0x02:
-					e := NewEngineDataDPFSCR(60, 1500, 101.3, 18, 350, 180, 260, 240, 4.5, 88, 75, 35, 12, 120, 116.39, 39.91, 50000, true, true)
+					e := model.NewEngineDataDPFSCR(60, 1500, 101.3, 18, 350, 180, 260, 240, 4.5, 88, 75, 35, 12, 120, 116.39, 39.91, 50000, true, true)
 					data, _ = e.Encode()
 				case 0x04:
-					v := NewVehicleLogoutCode(uint16(i))
+					v := model.NewVehicleLogoutCode(uint16(i))
 					data, _ = v.Encode()
 				case 0x05:
-					data = GB1239Time{Year: 24, Month: 3, Day: 15, Hour: 8, Minute: 0, Second: 0}.Bytes()
+					data = model.GB1239Time{Year: 24, Month: 3, Day: 15, Hour: 8, Minute: 0, Second: 0}.Bytes()
 				case 0x06:
-					v := &SupplementaryVehicleInfo{
-						TorqueMode:  ScaledUint8{Raw: 1, Valid: true},
-						AccelPedal:  ScaledUint8{Raw: 50, Valid: true},
-						DPFUpstreamTemp: ScaledInt16{Raw: 8000, Valid: true},
+					v := &model.SupplementaryVehicleInfo{
+						TorqueMode:     model.ScaledUint8{Raw: 1, Valid: true},
+						AccelPedal:     model.ScaledUint8{Raw: 50, Valid: true},
+						DPFUpstreamTemp: model.ScaledInt16{Raw: 8000, Valid: true},
 					}
 					data, _ = v.Encode()
 				case 0x07:
-					v := NewPlatformLoginCode(fmt.Sprintf("user%04d", i%9999), "pass", 0x01)
+					v := model.NewPlatformLoginCode(fmt.Sprintf("user%04d", i%9999), "pass", 0x01)
 					data, _ = v.Encode()
 				case 0x08:
-					v := NewPlatformLogoutCode(uint16(i))
+					v := model.NewPlatformLogoutCode(uint16(i))
 					data, _ = v.Encode()
 				}
 
-				pkt, _ := BuildPlatformPacket(cmd, 0xFE, vin, 0x01, data)
-				wire, _ := EncodePlatformPacket(pkt)
+				pkt, _ := packet.BuildPlatformPacket(cmd, 0xFE, vin, 0x01, data)
+				wire, _ := packet.EncodePlatformPacket(pkt)
 
-				if !VerifyChecksum(wire) {
+				if !packet.VerifyChecksum(wire) {
 					atomic.AddInt64(&errors, 1)
 					continue
 				}
 
-				parsed, _ := ParsePlatformPacket(wire)
-				_, err := DecodeDataUnit(parsed.CommandFlag, parsed.DataUnit)
+				parsed, _ := packet.ParsePlatformPacket(wire)
+				_, err := packet.DecodeDataUnit(parsed.CommandFlag, parsed.DataUnit)
 				if err != nil {
 					atomic.AddInt64(&errors, 1)
 				}
@@ -242,22 +245,16 @@ func TestStressMemoryAlloc(t *testing.T) {
 	}
 
 	const N = 10000
-	var allocBefore, allocAfter float64
-
-	// Measure baseline
-	testing.AllocsPerRun(1, func() {})
 
 	avg := testing.AllocsPerRun(N, func() {
-		e := NewEngineDataDPFSCR(60, 1500, 101.3, 18, 350, 180, 260, 240, 4.5, 88, 75, 35, 12, 120, 116.39, 39.91, 50000, true, true)
+		e := model.NewEngineDataDPFSCR(60, 1500, 101.3, 18, 350, 180, 260, 240, 4.5, 88, 75, 35, 12, 120, 116.39, 39.91, 50000, true, true)
 		data, _ := e.Encode()
-		pkt, _ := BuildPlatformPacket(0x02, 0xFE, "VINALLOC0000001", 0x01, data)
-		wire, _ := EncodePlatformPacket(pkt)
-		parsed, _ := ParsePlatformPacket(wire)
-		_, _ = DecodeDataUnit(parsed.CommandFlag, parsed.DataUnit)
+		pkt, _ := packet.BuildPlatformPacket(0x02, 0xFE, "VINALLOC0000001", 0x01, data)
+		wire, _ := packet.EncodePlatformPacket(pkt)
+		parsed, _ := packet.ParsePlatformPacket(wire)
+		_, _ = packet.DecodeDataUnit(parsed.CommandFlag, parsed.DataUnit)
 	})
 
-	_ = allocBefore
-	_ = allocAfter
 	t.Logf("[STRESS] Memory: %.1f allocs/op for full pipeline", avg)
 }
 
@@ -281,16 +278,16 @@ func TestStressSmallPackets(t *testing.T) {
 			defer wg.Done()
 			vin := fmt.Sprintf("SM%dVIN%08d", wid, wid)
 			for i := 0; i < N/workers; i++ {
-				pkt, _ := BuildPlatformPacket(0x05, 0xFE, vin, 0x01,
-					GB1239Time{Year: 24, Month: 3, Day: 15, Hour: 8, Minute: 0, Second: 0}.Bytes())
-				wire, _ := EncodePlatformPacket(pkt)
+				pkt, _ := packet.BuildPlatformPacket(0x05, 0xFE, vin, 0x01,
+					model.GB1239Time{Year: 24, Month: 3, Day: 15, Hour: 8, Minute: 0, Second: 0}.Bytes())
+				wire, _ := packet.EncodePlatformPacket(pkt)
 
-				if !VerifyChecksum(wire) {
+				if !packet.VerifyChecksum(wire) {
 					atomic.AddInt64(&errors, 1)
 					continue
 				}
 
-				parsed, err := ParsePlatformPacket(wire)
+				parsed, err := packet.ParsePlatformPacket(wire)
 				if err != nil || parsed.DataLength != 6 {
 					atomic.AddInt64(&errors, 1)
 				}
@@ -313,21 +310,20 @@ func TestStressCorruptionDetection(t *testing.T) {
 	var detected int64
 
 	for i := 0; i < N; i++ {
-		e := NewEngineDataDPFSCR(
+		e := model.NewEngineDataDPFSCR(
 			float64(i%120), float64(1000+i%3000), 101.3, 15,
 			400, 200, 250, 220, 3, 85, 80, 30, 10, 120,
 			116.39, 39.91, 50000+float64(i),
 			true, true,
 		)
 		engineRaw, _ := e.Encode()
-		pkt, _ := BuildPlatformPacket(0x02, 0xFE, "CORRVIN00000001", 0x01, engineRaw)
-		wire, _ := EncodePlatformPacket(pkt)
+		pkt, _ := packet.BuildPlatformPacket(0x02, 0xFE, "CORRVIN00000001", 0x01, engineRaw)
+		wire, _ := packet.EncodePlatformPacket(pkt)
 
-		// Corrupt 1 random byte in payload
 		corruptPos := 24 + (i % len(engineRaw))
 		if corruptPos < len(wire)-1 {
 			wire[corruptPos] ^= 0xFF
-			if !VerifyChecksum(wire) {
+			if !packet.VerifyChecksum(wire) {
 				detected++
 			}
 		}
@@ -351,7 +347,7 @@ func TestStressLatencyDistribution(t *testing.T) {
 
 	const N = 5000
 	latencies := make([]time.Duration, N)
-	e := NewEngineDataDPFSCR(60, 1500, 101.3, 18, 350, 180, 260, 240, 4.5, 88, 75, 35, 12, 120, 116.39, 39.91, 50000, true, true)
+	e := model.NewEngineDataDPFSCR(60, 1500, 101.3, 18, 350, 180, 260, 240, 4.5, 88, 75, 35, 12, 120, 116.39, 39.91, 50000, true, true)
 	engineRaw, _ := e.Encode()
 
 	var maxLatency, minLatency time.Duration
@@ -359,11 +355,11 @@ func TestStressLatencyDistribution(t *testing.T) {
 
 	for i := 0; i < N; i++ {
 		start := time.Now()
-		pkt, _ := BuildPlatformPacket(0x02, 0xFE, "LATVIN000000001", 0x01, engineRaw)
-		wire, _ := EncodePlatformPacket(pkt)
-		_ = VerifyChecksum(wire)
-		parsed, _ := ParsePlatformPacket(wire)
-		_, _ = DecodeDataUnit(parsed.CommandFlag, parsed.DataUnit)
+		pkt, _ := packet.BuildPlatformPacket(0x02, 0xFE, "LATVIN000000001", 0x01, engineRaw)
+		wire, _ := packet.EncodePlatformPacket(pkt)
+		_ = packet.VerifyChecksum(wire)
+		parsed, _ := packet.ParsePlatformPacket(wire)
+		_, _ = packet.DecodeDataUnit(parsed.CommandFlag, parsed.DataUnit)
 		lat := time.Since(start)
 		latencies[i] = lat
 
@@ -375,12 +371,9 @@ func TestStressLatencyDistribution(t *testing.T) {
 		}
 	}
 
-	// Calculate P50, P99
-	// Simple: sort a copy (accept N=5000 is fine)
 	sorted := make([]time.Duration, N)
 	copy(sorted, latencies)
 
-	// Insertion sort for small N
 	for i := 1; i < N; i++ {
 		key := sorted[i]
 		j := i - 1
@@ -398,6 +391,3 @@ func TestStressLatencyDistribution(t *testing.T) {
 		N, minLatency.Round(time.Nanosecond), p50.Round(time.Nanosecond),
 		p99.Round(time.Nanosecond), maxLatency.Round(time.Nanosecond))
 }
-
-// Helper: non-cryptographic random source for stress tests
-var stressRand = rand.New(rand.NewSource(time.Now().UnixNano()))

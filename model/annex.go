@@ -81,6 +81,8 @@ func DecodeAnnexBData(b []byte) (*AnnexBData, error) {
 	return d, nil
 }
 
+func (d *AnnexBData) Size() int { return AnnexBDataFixedSize }
+
 func (d *AnnexBData) AccelPedal() float64 {
 	return ScaleUint8(d.AccelPedalRaw, 0.4, 0)
 }

@@ -277,18 +277,18 @@ func TestRealTimeInfoReport(t *testing.T) {
 		t.Errorf("expected at least 8 bytes, got %d", len(data))
 	}
 
-	// Decode back
-	var decoded Report
-	decoded.DataTime, _ = ParseGB1239Time(data[0:6])
-	decoded.SerialNum = uint16(data[6])<<8 | uint16(data[7])
-	// Skip block parsing for now as it requires more complex logic.
-	// The raw data is preserved for platform forwarding (Section 5.3.3).
+	// Decode back using the real decoder (validates multi-block boundary detection)
+	var decoded RealTimeInfoReport
+	if err := decoded.Decode(data); err != nil {
+		t.Fatalf("Decode: %v", err)
+	}
+	if decoded.SerialNum != 1 {
+		t.Errorf("SerialNum: expected 1, got %d", decoded.SerialNum)
+	}
+	if len(decoded.InfoBlocks) != 1 {
+		t.Errorf("expected 1 block, got %d", len(decoded.InfoBlocks))
+	}
 	t.Logf("Report encoded: %d bytes, decoded time: %v", len(data), decoded.DataTime)
-}
-
-type Report struct {
-	DataTime  GB1239Time
-	SerialNum uint16
 }
 
 func TestNewScaledUint16(t *testing.T) {
@@ -510,4 +510,255 @@ func BenchmarkEngineDataDPFSCRDecode(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		_ = dec.Decode(data)
 	}
+}
+
+func TestHistoricalInfoCode(t *testing.T) {
+	block1 := HistoricalInfoBlock{
+		BeginTime: GB1239Time{Year: 24, Month: 3, Day: 15, Hour: 8, Minute: 0, Second: 0},
+		EndTime:   GB1239Time{Year: 24, Month: 3, Day: 15, Hour: 9, Minute: 0, Second: 0},
+		Data:      []byte{0x01, 0x02, 0x03, 0x04},
+	}
+	block2 := HistoricalInfoBlock{
+		BeginTime: GB1239Time{Year: 24, Month: 3, Day: 15, Hour: 9, Minute: 0, Second: 0},
+		EndTime:   GB1239Time{Year: 24, Month: 3, Day: 15, Hour: 10, Minute: 0, Second: 0},
+		Data:      []byte{0x05, 0x06},
+	}
+
+	code := &HistoricalInfoCode{
+		DataTime:  GB1239Time{Year: 24, Month: 3, Day: 15, Hour: 10, Minute: 30, Second: 0},
+		SerialNum: 42,
+		Blocks:    []HistoricalInfoBlock{block1, block2},
+	}
+
+	data, err := code.Encode()
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+
+	var decoded HistoricalInfoCode
+	if err := decoded.Decode(data); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if decoded.SerialNum != 42 {
+		t.Errorf("SerialNum: expected 42, got %d", decoded.SerialNum)
+	}
+	if len(decoded.Blocks) != 2 {
+		t.Fatalf("expected 2 blocks, got %d", len(decoded.Blocks))
+	}
+	if !bytesEqual(decoded.Blocks[0].Data, block1.Data) {
+		t.Errorf("block 1 data mismatch")
+	}
+	if !bytesEqual(decoded.Blocks[1].Data, block2.Data) {
+		t.Errorf("block 2 data mismatch")
+	}
+	t.Logf("Historical info: encoded=%d bytes, decoded 2 blocks", len(data))
+}
+
+func bytesEqual(a, b []byte) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func TestAlarmInfoCode(t *testing.T) {
+	code := &AlarmInfoCode{
+		DataTime:   GB1239Time{Year: 24, Month: 3, Day: 15, Hour: 8, Minute: 0, Second: 0},
+		SerialNum:  1,
+		AlarmCount: 2,
+		Alarms: []Alarm{
+			{
+				AlarmType: AlarmTypeOverspeed,
+				AlarmTime: GB1239Time{Year: 24, Month: 3, Day: 15, Hour: 8, Minute: 0, Second: 1},
+				AlarmData: []byte{0x01, 0x02},
+			},
+			{
+				AlarmType: AlarmTypeTamper,
+				AlarmTime: GB1239Time{Year: 24, Month: 3, Day: 15, Hour: 8, Minute: 0, Second: 5},
+				AlarmData: []byte{0x03},
+			},
+		},
+	}
+
+	data, err := code.Encode()
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+
+	var decoded AlarmInfoCode
+	if err := decoded.Decode(data); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if decoded.SerialNum != 1 {
+		t.Errorf("SerialNum: expected 1, got %d", decoded.SerialNum)
+	}
+	if len(decoded.Alarms) != 2 {
+		t.Fatalf("expected 2 alarms, got %d", len(decoded.Alarms))
+	}
+	if decoded.Alarms[0].AlarmType != AlarmTypeOverspeed {
+		t.Errorf("alarm 0 type: expected 0x04, got 0x%02x", decoded.Alarms[0].AlarmType)
+	}
+	if !bytesEqual(decoded.Alarms[0].AlarmData, []byte{0x01, 0x02}) {
+		t.Errorf("alarm 0 data mismatch")
+	}
+	if decoded.Alarms[1].AlarmType != AlarmTypeTamper {
+		t.Errorf("alarm 1 type: expected 0x06, got 0x%02x", decoded.Alarms[1].AlarmType)
+	}
+	t.Logf("Alarm info: %d bytes, %d alarms", len(data), len(decoded.Alarms))
+}
+
+func TestControlCode(t *testing.T) {
+	code := &ControlCode{
+		ControlType: ControlTypeSet,
+		SerialNum:   100,
+		ParamCount:  2,
+		Params: []ControlParam{
+			{ParamID: 0x1234, ParamLen: 2, ParamValue: []byte{0xAB, 0xCD}},
+			{ParamID: 0x5678, ParamLen: 4, ParamValue: []byte{0x01, 0x02, 0x03, 0x04}},
+		},
+	}
+
+	data, err := code.Encode()
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+
+	var decoded ControlCode
+	if err := decoded.Decode(data); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if decoded.SerialNum != 100 {
+		t.Errorf("SerialNum: expected 100, got %d", decoded.SerialNum)
+	}
+	if len(decoded.Params) != 2 {
+		t.Fatalf("expected 2 params, got %d", len(decoded.Params))
+	}
+	if decoded.Params[0].ParamID != 0x1234 {
+		t.Errorf("param 0 ID mismatch")
+	}
+	if decoded.Params[1].ParamID != 0x5678 {
+		t.Errorf("param 1 ID mismatch")
+	}
+	t.Logf("Control code: %d bytes, %d params", len(data), len(decoded.Params))
+}
+
+func TestControlResponseCode(t *testing.T) {
+	resp := &ControlResponseCode{
+		SerialNum:   100,
+		ControlType: ControlTypeSet,
+		Result:      0x01,
+		DataLen:     4,
+		Data:        []byte{0x0A, 0x0B, 0x0C, 0x0D},
+	}
+
+	data, err := resp.Encode()
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+
+	var decoded ControlResponseCode
+	if err := decoded.Decode(data); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if decoded.SerialNum != 100 {
+		t.Errorf("SerialNum mismatch")
+	}
+	if decoded.Result != 0x01 {
+		t.Errorf("Result: expected 0x01, got 0x%02x", decoded.Result)
+	}
+	if !bytesEqual(decoded.Data, []byte{0x0A, 0x0B, 0x0C, 0x0D}) {
+		t.Errorf("response data mismatch")
+	}
+	t.Logf("Control response: %d bytes", len(data))
+}
+
+func TestFileUploadNotification(t *testing.T) {
+	notif := &FileUploadNotificationCode{
+		FileNameLen: 10,
+		FileName:    []byte("firmware.bin"),
+		FileSize:    1048576,
+		TotalBlocks: 256,
+	}
+
+	data, err := notif.Encode()
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+
+	var decoded FileUploadNotificationCode
+	if err := decoded.Decode(data); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if decoded.FileSize != 1048576 {
+		t.Errorf("FileSize: expected 1048576, got %d", decoded.FileSize)
+	}
+	if decoded.TotalBlocks != 256 {
+		t.Errorf("TotalBlocks: expected 256, got %d", decoded.TotalBlocks)
+	}
+	if !bytesEqual(decoded.FileName, []byte("firmware.bin")) {
+		t.Errorf("FileName mismatch: got %q", decoded.FileName)
+	}
+	t.Logf("File notification: %d bytes, file=%q size=%d blocks=%d",
+		len(data), decoded.FileName, decoded.FileSize, decoded.TotalBlocks)
+}
+
+func TestFileDataBlock(t *testing.T) {
+	block := &FileDataBlockCode{
+		BlockIndex: 42,
+		BlockLen:   1024,
+		BlockData:  make([]byte, 1024),
+	}
+	for i := range block.BlockData {
+		block.BlockData[i] = byte(i % 256)
+	}
+
+	data, err := block.Encode()
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+
+	var decoded FileDataBlockCode
+	if err := decoded.Decode(data); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if decoded.BlockIndex != 42 {
+		t.Errorf("BlockIndex mismatch")
+	}
+	if len(decoded.BlockData) != 1024 {
+		t.Errorf("BlockData len: expected 1024, got %d", len(decoded.BlockData))
+	}
+	t.Logf("File data block: %d bytes, index=%d len=%d", len(data), decoded.BlockIndex, len(decoded.BlockData))
+}
+
+func TestFileUploadComplete(t *testing.T) {
+	complete := &FileUploadCompleteCode{
+		Result:    0x01,
+		BlockMask: []byte{0x00, 0x00, 0x00, 0x00},
+	}
+
+	data, err := complete.Encode()
+	if err != nil {
+		t.Fatalf("encode: %v", err)
+	}
+
+	var decoded FileUploadCompleteCode
+	if err := decoded.Decode(data); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+
+	if decoded.Result != 0x01 {
+		t.Errorf("Result: expected 0x01, got 0x%02x", decoded.Result)
+	}
+	t.Logf("File upload complete: %d bytes, result=%d", len(data), decoded.Result)
 }

@@ -1,29 +1,28 @@
-package model
+package model_test
 
 import (
 	"encoding/binary"
-	"fmt"
 	"math"
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/DarkInno/hj1239-go-sdk/model"
+	"github.com/DarkInno/hj1239-go-sdk/packet"
 )
 
 // ============================================================
 // Simulation Test 1: Vehicle Terminal Full Cycle
-// 模拟重型车终端完整通讯流程:
-//   GB17691: 登入 → 实时上报 → 登出
 // ============================================================
 
 func TestSimulateVehicleTerminalFullCycle(t *testing.T) {
-	// --- 1. 车辆终端登入 (GB17691 Annex Q.6.4.3) ---
 	vin := "LFV2A21K3G1234567"
-	login := &VehicleLoginCode{
-		Time:      GB1239Time{Year: 24, Month: 3, Day: 15, Hour: 8, Minute: 0, Second: 0},
+	login := &model.VehicleLoginCode{
+		Time:      model.GB1239Time{Year: 24, Month: 3, Day: 15, Hour: 8, Minute: 0, Second: 0},
 		SerialNum: 1,
 		ICCID:     "89860000000000000001",
 		AuthData:  []byte(vin),
-		LoginTime: GB1239Time{Year: 24, Month: 3, Day: 15, Hour: 8, Minute: 0, Second: 1},
+		LoginTime: model.GB1239Time{Year: 24, Month: 3, Day: 15, Hour: 8, Minute: 0, Second: 1},
 	}
 	loginRaw, err := login.Encode()
 	if err != nil {
@@ -31,8 +30,7 @@ func TestSimulateVehicleTerminalFullCycle(t *testing.T) {
 	}
 	t.Logf("[SIM] Vehicle login encoded: %d bytes, VIN=%s", len(loginRaw), vin)
 
-	// Verify round-trip
-	var loginBack VehicleLoginCode
+	var loginBack model.VehicleLoginCode
 	if err := loginBack.Decode(loginRaw); err != nil {
 		t.Fatalf("login decode: %v", err)
 	}
@@ -40,16 +38,14 @@ func TestSimulateVehicleTerminalFullCycle(t *testing.T) {
 		t.Errorf("ICCID mismatch: got %q, want %q", loginBack.ICCID, login.ICCID)
 	}
 
-	// --- 2. 实时信息上报 (Section 4.5.2) ---
-	// 模拟 5 次上报，模拟车辆行驶过程
 	serial := uint16(1)
 	for i := 0; i < 5; i++ {
-		speed := 50.0 + float64(i)*10.0   // 50→90 km/h
-		rpm := 1200.0 + float64(i)*200.0  // 1200→2000 rpm
+		speed := 50.0 + float64(i)*10.0
+		rpm := 1200.0 + float64(i)*200.0
 		lon := 116.3912 + float64(i)*0.01
 		lat := 39.9073 + float64(i)*0.005
 
-		engine := NewEngineDataDPFSCR(
+		engine := model.NewEngineDataDPFSCR(
 			speed, rpm, 101.3, 15.0+float64(i)*2.0,
 			300.0+float64(i)*10, 150.0+float64(i)*8,
 			280.0, 250.0, 3.0, 85.0, 75.0-float64(i)*2,
@@ -59,16 +55,12 @@ func TestSimulateVehicleTerminalFullCycle(t *testing.T) {
 		)
 
 		engineRaw, _ := engine.Encode()
-		block := RealTimeInfoBlock{
-			InfoTypeFlag: 0x02,
-			CollectTime:  GB1239Time{Year: 24, Month: 3, Day: 15, Hour: 8, Minute: uint8(i), Second: 30},
-			infoBodyRaw:  engineRaw,
-		}
+		block := model.NewRealTimeInfoBlock(0x02, model.GB1239Time{Year: 24, Month: 3, Day: 15, Hour: 8, Minute: uint8(i), Second: 30}, engineRaw)
 
-		report := &RealTimeInfoReport{
-			DataTime:   GB1239Time{Year: 24, Month: 3, Day: 15, Hour: 8, Minute: uint8(i), Second: 31},
+		report := &model.RealTimeInfoReport{
+			DataTime:   model.GB1239Time{Year: 24, Month: 3, Day: 15, Hour: 8, Minute: uint8(i), Second: 31},
 			SerialNum:  serial,
-			InfoBlocks: []RealTimeInfoBlock{block},
+			InfoBlocks: []model.RealTimeInfoBlock{block},
 		}
 		serial++
 
@@ -77,8 +69,7 @@ func TestSimulateVehicleTerminalFullCycle(t *testing.T) {
 			t.Fatalf("report %d encode: %v", i+1, err)
 		}
 
-		// Decode header at least
-		dataTime, _ := ParseGB1239Time(rptRaw[0:6])
+		dataTime, _ := model.ParseGB1239Time(rptRaw[0:6])
 		decSerial := binary.BigEndian.Uint16(rptRaw[6:8])
 		t.Logf("[SIM] Report #%d: %d bytes, time=%02d:%02d:%02d, serial=%d, speed=%.1f km/h, rpm=%.0f",
 			i+1, len(rptRaw),
@@ -86,9 +77,8 @@ func TestSimulateVehicleTerminalFullCycle(t *testing.T) {
 			decSerial, speed, rpm)
 	}
 
-	// --- 3. 车辆登出 (GB17691 Annex Q.6.4.3) ---
-	logout := NewVehicleLogoutCode(serial)
-	logout.Time = GB1239Time{Year: 24, Month: 3, Day: 15, Hour: 8, Minute: 5, Second: 0}
+	logout := model.NewVehicleLogoutCode(serial)
+	logout.Time = model.GB1239Time{Year: 24, Month: 3, Day: 15, Hour: 8, Minute: 5, Second: 0}
 	logoutRaw, err := logout.Encode()
 	if err != nil {
 		t.Fatalf("logout encode: %v", err)
@@ -101,33 +91,26 @@ func TestSimulateVehicleTerminalFullCycle(t *testing.T) {
 
 // ============================================================
 // Simulation Test 2: Enterprise Platform Full Cycle
-// 模拟企业平台完整通讯流程:
-//   TCP连接 → 平台登录 → 数据转发 → 平台登出
-//   (Section 5.6/5.7)
 // ============================================================
 
 func TestSimulateEnterprisePlatformCycle(t *testing.T) {
 	vin := "LFV2A21K3G1234567"
-	username := "ent_plat_01" // max 12 chars per protocol
+	username := "ent_plat_01"
 	password := "secure_password_123"
 
-	// --- 1. 平台登录 (Section 5.7.1) ---
-	loginData := NewPlatformLoginCode(username, password, 0x01)
+	loginData := model.NewPlatformLoginCode(username, password, 0x01)
 	loginRaw, _ := loginData.Encode()
 	t.Logf("[SIM] Platform login: %d bytes, user=%s", len(loginRaw), username)
 
-	// Wrap in packet (Section 5.6.3)
-	pkt, _ := BuildPlatformPacket(0x07, 0xFE, vin, 0x01, loginRaw)
-	wire, _ := EncodePlatformPacket(pkt)
+	pkt, _ := packet.BuildPlatformPacket(0x07, 0xFE, vin, 0x01, loginRaw)
+	wire, _ := packet.EncodePlatformPacket(pkt)
 	t.Logf("[SIM] Platform login packet: %d bytes on wire", len(wire))
 
-	// Verify checksum
-	if !VerifyChecksum(wire) {
+	if !packet.VerifyChecksum(wire) {
 		t.Error("platform login: checksum failed")
 	}
 
-	// --- 2. 解析服务器侧收到的数据 ---
-	parsed, err := ParsePlatformPacket(wire)
+	parsed, err := packet.ParsePlatformPacket(wire)
 	if err != nil {
 		t.Fatalf("parse platform packet: %v", err)
 	}
@@ -138,16 +121,14 @@ func TestSimulateEnterprisePlatformCycle(t *testing.T) {
 		t.Errorf("VIN mismatch: %q != %q", parsed.VIN, vin)
 	}
 
-	// 解码登录数据
-	decoded, _ := DecodeDataUnit(parsed.CommandFlag, parsed.DataUnit)
-	decLogin := decoded.(*PlatformLoginCode)
+	decoded, _ := packet.DecodeDataUnit(parsed.CommandFlag, parsed.DataUnit)
+	decLogin := decoded.(*model.PlatformLoginCode)
 	if decLogin.Username != username {
 		t.Errorf("username: %q != %q", decLogin.Username, username)
 	}
 
-	// --- 3. 模拟服务器转发 3 条车辆数据到企业平台 (Section 5.3.3) ---
 	for i := 0; i < 3; i++ {
-		engine := NewEngineDataDPFSCR(
+		engine := model.NewEngineDataDPFSCR(
 			60.0+float64(i)*5, 1500.0, 101.3, 18.0,
 			350.0, 180.0, 260.0, 240.0, 4.5, 88.0, 72.0,
 			35.0, 12.0, 120.0,
@@ -156,28 +137,27 @@ func TestSimulateEnterprisePlatformCycle(t *testing.T) {
 		)
 		engineRaw, _ := engine.Encode()
 
-		fwdPkt, _ := BuildPlatformPacket(0x02, 0xFE, vin, 0x01, engineRaw)
-		fwdWire, _ := EncodePlatformPacket(fwdPkt)
+		fwdPkt, _ := packet.BuildPlatformPacket(0x02, 0xFE, vin, 0x01, engineRaw)
+		fwdWire, _ := packet.EncodePlatformPacket(fwdPkt)
 
-		if !VerifyChecksum(fwdWire) {
+		if !packet.VerifyChecksum(fwdWire) {
 			t.Errorf("forward #%d: checksum failed", i+1)
 		}
 
-		fwdParsed, _ := ParsePlatformPacket(fwdWire)
-		fwdDecoded, _ := DecodeDataUnit(fwdParsed.CommandFlag, fwdParsed.DataUnit)
-		_ = fwdDecoded // enterprise platform processes it
+		fwdParsed, _ := packet.ParsePlatformPacket(fwdWire)
+		fwdDecoded, _ := packet.DecodeDataUnit(fwdParsed.CommandFlag, fwdParsed.DataUnit)
+		_ = fwdDecoded
 
 		t.Logf("[SIM] Platform forward #%d: %d bytes, cmd=0x%02x",
 			i+1, len(fwdWire), fwdParsed.CommandFlag)
 	}
 
-	// --- 4. 平台登出 (Section 5.7.2) ---
-	logoutData := NewPlatformLogoutCode(1)
+	logoutData := model.NewPlatformLogoutCode(1)
 	logoutRaw, _ := logoutData.Encode()
-	logoutPkt, _ := BuildPlatformPacket(0x08, 0xFE, vin, 0x01, logoutRaw)
-	logoutWire, _ := EncodePlatformPacket(logoutPkt)
+	logoutPkt, _ := packet.BuildPlatformPacket(0x08, 0xFE, vin, 0x01, logoutRaw)
+	logoutWire, _ := packet.EncodePlatformPacket(logoutPkt)
 
-	if !VerifyChecksum(logoutWire) {
+	if !packet.VerifyChecksum(logoutWire) {
 		t.Error("platform logout: checksum failed")
 	}
 	t.Logf("[SIM] Platform logout: %d bytes on wire", len(logoutWire))
@@ -185,71 +165,81 @@ func TestSimulateEnterprisePlatformCycle(t *testing.T) {
 
 // ============================================================
 // Simulation Test 3: Packet Corruption & Recovery
-// 模拟数据包损坏 → 校验失败 → 重传
 // ============================================================
 
 func TestSimulatePacketCorruptionRecovery(t *testing.T) {
 	vin := "TESTVIN0000000001"
+	collectTime := model.GB1239Time{Year: 24, Month: 3, Day: 15, Hour: 8, Minute: 0, Second: 0}
+	dataTime := model.GB1239Time{Year: 24, Month: 3, Day: 15, Hour: 8, Minute: 0, Second: 1}
 
-	// Original intact packet
-	engine := NewEngineDataDPFSCR(
+	engine := model.NewEngineDataDPFSCR(
 		60.0, 1500.0, 101.3, 18.0,
 		350.0, 180.0, 260.0, 240.0, 4.5, 88.0, 75.0,
 		35.0, 12.0, 120.0, 116.3912, 39.9073, 51234.5,
 		true, true,
 	)
 	engineRaw, _ := engine.Encode()
-	origPkt, _ := BuildPlatformPacket(0x02, 0xFE, vin, 0x01, engineRaw)
-	origWire, _ := EncodePlatformPacket(origPkt)
 
-	if !VerifyChecksum(origWire) {
+	report := &model.RealTimeInfoReport{
+		DataTime:  dataTime,
+		SerialNum: 1,
+		InfoBlocks: []model.RealTimeInfoBlock{
+			model.NewRealTimeInfoBlock(0x02, collectTime, engineRaw),
+		},
+	}
+	reportRaw, _ := report.Encode()
+
+	origPkt, _ := packet.BuildPlatformPacket(0x02, 0xFE, vin, 0x01, reportRaw)
+	origWire, _ := packet.EncodePlatformPacket(origPkt)
+
+	if !packet.VerifyChecksum(origWire) {
 		t.Fatal("original packet must pass checksum")
 	}
 
-	// --- Corruption scenario 1: single bit flip in data unit ---
 	corrupted := make([]byte, len(origWire))
 	copy(corrupted, origWire)
-	// Flip bit in the data payload area
-	flipPos := 25 // inside data unit
+	flipPos := 25
 	corrupted[flipPos] ^= 0x01
 
-	if VerifyChecksum(corrupted) {
+	if packet.VerifyChecksum(corrupted) {
 		t.Error("corrupted packet should fail checksum")
 	}
 
-	err := CheckChecksum(corrupted)
+	err := packet.CheckChecksum(corrupted)
 	if err == nil {
 		t.Error("CheckChecksum should return error for corruption")
 	} else {
 		t.Logf("[SIM] Corruption detected: %v", err)
 	}
 
-	// --- Corruption scenario 2: VIN tampered ---
 	tampered := make([]byte, len(origWire))
 	copy(tampered, origWire)
-	tampered[4] = 'X' // Corrupt first char of VIN
+	tampered[4] = 'X'
 
-	if VerifyChecksum(tampered) {
+	if packet.VerifyChecksum(tampered) {
 		t.Error("tampered VIN should fail checksum")
 	}
 
-	// --- Recovery: retransmit original intact packet ---
 	retransmit := make([]byte, len(origWire))
 	copy(retransmit, origWire)
-	if !VerifyChecksum(retransmit) {
+	if !packet.VerifyChecksum(retransmit) {
 		t.Error("retransmitted intact packet must pass checksum")
 	}
 
-	// Parse retransmitted data
-	parsed, err := ParsePlatformPacket(retransmit)
+	parsed, err := packet.ParsePlatformPacket(retransmit)
 	if err != nil {
 		t.Fatalf("parse retransmit: %v", err)
 	}
-	decoded, err := DecodeDataUnit(parsed.CommandFlag, parsed.DataUnit)
+	decoded, err := packet.DecodeDataUnit(parsed.CommandFlag, parsed.DataUnit)
 	if err != nil {
 		t.Fatalf("decode retransmit: %v", err)
 	}
-	e := decoded.(*EngineDataDPFSCR)
+	decReport := decoded.(*model.RealTimeInfoReport)
+	eBody, err := model.ParseInfoBody(0x02, decReport.InfoBlocks[0].BodyRaw())
+	if err != nil {
+		t.Fatalf("parse info body: %v", err)
+	}
+	e := eBody.(*model.EngineDataDPFSCR)
 	if !e.Speed.Valid {
 		t.Error("retransmitted data: speed should be valid")
 	}
@@ -258,7 +248,6 @@ func TestSimulatePacketCorruptionRecovery(t *testing.T) {
 
 // ============================================================
 // Simulation Test 4: Multi-Vehicle Concurrent Data Stream
-// 模拟多车并发上报
 // ============================================================
 
 func TestSimulateMultiVehicleConcurrent(t *testing.T) {
@@ -285,18 +274,18 @@ func TestSimulateMultiVehicleConcurrent(t *testing.T) {
 		go func(vehicleVIN string) {
 			defer wg.Done()
 			for i := 0; i < reportsPerVehicle; i++ {
-				engine := NewEngineDataDPFSCR(
+				engine := model.NewEngineDataDPFSCR(
 					float64(40+i), 1200.0+float64(i)*50, 101.3, 15.0+float64(i)*2,
 					400.0-float64(i), 200.0-float64(i)*2,
 					250.0, 220.0, 3.0, 90.0, 80.0-float64(i),
-				30.0, 10.0, 120.0,
-				116.0+float64(i)*0.1, 39.0+float64(i)*0.05,
-				float64(50000+i*100),
-				true, true,
+					30.0, 10.0, 120.0,
+					116.0+float64(i)*0.1, 39.0+float64(i)*0.05,
+					float64(50000+i*100),
+					true, true,
 				)
 				engineRaw, _ := engine.Encode()
-				pkt, _ := BuildPlatformPacket(0x02, 0xFE, vehicleVIN, 0x01, engineRaw)
-				wire, _ := EncodePlatformPacket(pkt)
+				pkt, _ := packet.BuildPlatformPacket(0x02, 0xFE, vehicleVIN, 0x01, engineRaw)
+				wire, _ := packet.EncodePlatformPacket(pkt)
 
 				results <- vehicleReport{
 					vin:    vehicleVIN,
@@ -312,19 +301,17 @@ func TestSimulateMultiVehicleConcurrent(t *testing.T) {
 		close(results)
 	}()
 
-	// Verify all received packets
 	countByVIN := make(map[string]int)
 	for r := range results {
 		countByVIN[r.vin]++
 
-		// Every packet must parse correctly
-		parsed, err := ParsePlatformPacket(r.raw)
+		parsed, err := packet.ParsePlatformPacket(r.raw)
 		if err != nil {
 			t.Errorf("vehicle %s report #%d: parse failed: %v", r.vin, r.serial, err)
 			continue
 		}
 
-		if !VerifyChecksum(r.raw) {
+		if !packet.VerifyChecksum(r.raw) {
 			t.Errorf("vehicle %s report #%d: checksum failed", r.vin, r.serial)
 			continue
 		}
@@ -333,8 +320,7 @@ func TestSimulateMultiVehicleConcurrent(t *testing.T) {
 			t.Errorf("vehicle %s report #%d: VIN mismatch %q", r.vin, r.serial, parsed.VIN)
 		}
 
-		// Decode should succeed (raw bytes preserved)
-		if _, err := DecodeDataUnit(parsed.CommandFlag, parsed.DataUnit); err != nil {
+		if _, err := packet.DecodeDataUnit(parsed.CommandFlag, parsed.DataUnit); err != nil {
 			t.Errorf("vehicle %s report #%d: decode failed: %v", r.vin, r.serial, err)
 		}
 	}
@@ -344,23 +330,21 @@ func TestSimulateMultiVehicleConcurrent(t *testing.T) {
 			t.Errorf("vehicle %s: expected %d reports, got %d", vin, reportsPerVehicle, count)
 		}
 	}
-	t.Logf("[SIM] Multi-vehicle: %d vehicles × %d reports = %d total packets processed",
+	t.Logf("[SIM] Multi-vehicle: %d vehicles x %d reports = %d total packets processed",
 		len(vins), reportsPerVehicle, len(vins)*reportsPerVehicle)
 }
 
 // ============================================================
 // Simulation Test 5: Edge Cases & Boundary Values
-// 边界值测试：无效值、最大值、最小值、空数据
 // ============================================================
 
 func TestSimulateEdgeCases(t *testing.T) {
 	t.Run("all_invalid_fields", func(t *testing.T) {
-		// 所有字段均为无效 (0xFF...)
-		invalid := make([]byte, EngineDataDPFSCRSize)
+		invalid := make([]byte, model.EngineDataDPFSCRSize)
 		for i := range invalid {
 			invalid[i] = 0xFF
 		}
-		var e EngineDataDPFSCR
+		var e model.EngineDataDPFSCR
 		if err := e.Decode(invalid); err != nil {
 			t.Fatalf("decode all-invalid: %v", err)
 		}
@@ -375,10 +359,9 @@ func TestSimulateEdgeCases(t *testing.T) {
 	})
 
 	t.Run("boundary_min_max", func(t *testing.T) {
-		// 最小值: speed=0, rpm=0
-		eMin := NewEngineDataDPFSCR(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, true, true)
+		eMin := model.NewEngineDataDPFSCR(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, true, true)
 		rawMin, _ := eMin.Encode()
-		var decMin EngineDataDPFSCR
+		var decMin model.EngineDataDPFSCR
 		decMin.Decode(rawMin)
 		if !decMin.Speed.Valid {
 			t.Error("min speed should be valid")
@@ -387,37 +370,36 @@ func TestSimulateEdgeCases(t *testing.T) {
 			t.Errorf("min rpm raw: expected 0, got %d", decMin.EngineSpeed.Raw)
 		}
 
-		// 最大值: speed ~250.996 km/h (0xFFFE)
-		eMax := &EngineDataDPFSCR{
-			Speed:             ScaledUint16{Raw: 0xFFFE, Valid: true},
-			AtmPressure:       ScaledUint8{Raw: 0xFE, Valid: true},
-			EngineTorque:      ScaledInt8{Raw: 0xFE, Valid: true},
-			FrictionTorque:    ScaledInt8{Raw: 0xFE, Valid: true},
-			EngineSpeed:       ScaledUint16{Raw: 0xFFFE, Valid: true},
-			FuelFlow:          ScaledUint16{Raw: 0xFFFE, Valid: true},
-			SCRUpstreamNOx:    ScaledInt16{Raw: 0xFFFE, Valid: true},
-			SCRDownstreamNOx:  ScaledInt16{Raw: 0xFFFE, Valid: true},
-			ReagentRate:       ScaledUint8{Raw: 0xFE, Valid: true},
-			AirFlow:           ScaledUint16{Raw: 0xFFFE, Valid: true},
-			SCRUpstreamTemp:   ScaledInt16{Raw: 0xFFFE, Valid: true},
-			SCRDownstreamTemp: ScaledInt16{Raw: 0xFFFE, Valid: true},
-			DPFDiffPressure:   ScaledUint16{Raw: 0xFFFE, Valid: true},
-			CoolantTemp:       ScaledInt8{Raw: 0xFE, Valid: true},
-			UreaLevel:         ScaledUint8{Raw: 0xFE, Valid: true},
+		eMax := &model.EngineDataDPFSCR{
+			Speed:             model.ScaledUint16{Raw: 0xFFFE, Valid: true},
+			AtmPressure:       model.ScaledUint8{Raw: 0xFE, Valid: true},
+			EngineTorque:      model.ScaledInt8{Raw: 0xFE, Valid: true},
+			FrictionTorque:    model.ScaledInt8{Raw: 0xFE, Valid: true},
+			EngineSpeed:       model.ScaledUint16{Raw: 0xFFFE, Valid: true},
+			FuelFlow:          model.ScaledUint16{Raw: 0xFFFE, Valid: true},
+			SCRUpstreamNOx:    model.ScaledInt16{Raw: 0xFFFE, Valid: true},
+			SCRDownstreamNOx:  model.ScaledInt16{Raw: 0xFFFE, Valid: true},
+			ReagentRate:       model.ScaledUint8{Raw: 0xFE, Valid: true},
+			AirFlow:           model.ScaledUint16{Raw: 0xFFFE, Valid: true},
+			SCRUpstreamTemp:   model.ScaledInt16{Raw: 0xFFFE, Valid: true},
+			SCRDownstreamTemp: model.ScaledInt16{Raw: 0xFFFE, Valid: true},
+			DPFDiffPressure:   model.ScaledUint16{Raw: 0xFFFE, Valid: true},
+			CoolantTemp:       model.ScaledInt8{Raw: 0xFE, Valid: true},
+			UreaLevel:         model.ScaledUint8{Raw: 0xFE, Valid: true},
 			PositionStatus:    0x07,
-			Longitude:         ScaledUint32{Raw: 0xFFFFFFFE, Valid: true},
-			Latitude:          ScaledUint32{Raw: 0xFFFFFFFE, Valid: true},
-			Odometer:          ScaledUint32{Raw: 0xFFFFFFFE, Valid: true},
+			Longitude:         model.ScaledUint32{Raw: 0xFFFFFFFE, Valid: true},
+			Latitude:          model.ScaledUint32{Raw: 0xFFFFFFFE, Valid: true},
+			Odometer:          model.ScaledUint32{Raw: 0xFFFFFFFE, Valid: true},
 		}
 		rawMax, _ := eMax.Encode()
-		var decMax EngineDataDPFSCR
+		var decMax model.EngineDataDPFSCR
 		decMax.Decode(rawMax)
 		t.Logf("[SIM] Max values: speed.raw=0x%04x, longitude.raw=0x%08x",
 			decMax.Speed.Raw, decMax.Longitude.Raw)
 	})
 
 	t.Run("NaN_and_invalid_handling", func(t *testing.T) {
-		nanVal := NewScaledUint16(math.NaN(), 0.05, 0)
+		nanVal := model.NewScaledUint16(math.NaN(), 0.05, 0)
 		if nanVal.Valid {
 			t.Error("NaN should produce invalid scaled value")
 		}
@@ -428,8 +410,7 @@ func TestSimulateEdgeCases(t *testing.T) {
 			t.Errorf("NaN encode: expected FFFF, got %02x%02x", buf[0], buf[1])
 		}
 
-		// Decode 0xFFFF back - should be invalid
-		var dec ScaledUint16
+		var dec model.ScaledUint16
 		dec.DecodeUint16(buf, true)
 		if dec.Valid {
 			t.Error("0xFFFF decode should be invalid")
@@ -437,67 +418,55 @@ func TestSimulateEdgeCases(t *testing.T) {
 	})
 
 	t.Run("empty_and_minimal_packets", func(t *testing.T) {
-		// Empty data unit
-		pkt, _ := BuildPlatformPacket(0x04, 0xFE, "VIN00000000000001", 0x01, nil)
-		wire, _ := EncodePlatformPacket(pkt)
-		if !VerifyChecksum(wire) {
+		pkt, _ := packet.BuildPlatformPacket(0x04, 0xFE, "VIN00000000000001", 0x01, nil)
+		wire, _ := packet.EncodePlatformPacket(pkt)
+		if !packet.VerifyChecksum(wire) {
 			t.Error("empty data packet should have valid checksum")
 		}
-		parsed, _ := ParsePlatformPacket(wire)
+		parsed, _ := packet.ParsePlatformPacket(wire)
 		if parsed.DataLength != 0 {
 			t.Errorf("data length: expected 0, got %d", parsed.DataLength)
 		}
 
-		// 1-byte data unit
-		pkt2, _ := BuildPlatformPacket(0x01, 0xFE, "VIN00000000000001", 0x01, []byte{0xAA})
-		wire2, _ := EncodePlatformPacket(pkt2)
-		if !VerifyChecksum(wire2) {
+		pkt2, _ := packet.BuildPlatformPacket(0x01, 0xFE, "VIN00000000000001", 0x01, []byte{0xAA})
+		wire2, _ := packet.EncodePlatformPacket(pkt2)
+		if !packet.VerifyChecksum(wire2) {
 			t.Error("1-byte data packet should have valid checksum")
 		}
 		t.Logf("[SIM] Empty packet: %d bytes, 1-byte packet: %d bytes", len(wire), len(wire2))
 	})
 
 	t.Run("mixed_info_types", func(t *testing.T) {
-		// 一个上报中混合 OBD (0x01) + DPF/SCR (0x02) 两种信息类型
-		obd := &OBDInfoBody{MilStatus: 0x0001, DTCCount: 0, VIN: "VIN00000000000001"}
+		obd := &model.OBDInfoBody{MilStatus: 0x0001, DTCCount: 0, VIN: "VIN00000000000001"}
 		obdRaw, _ := obd.Encode()
 
-		engine := NewEngineDataDPFSCR(60, 1500, 101.3, 18, 350, 180, 260, 240, 4.5, 88, 75, 35, 12, 120.0, 116.39, 39.91, 50000, true, true)
+		engine := model.NewEngineDataDPFSCR(60, 1500, 101.3, 18, 350, 180, 260, 240, 4.5, 88, 75, 35, 12, 120.0, 116.39, 39.91, 50000, true, true)
 		engineRaw, _ := engine.Encode()
 
-		block1 := RealTimeInfoBlock{
-			InfoTypeFlag: 0x01,
-			CollectTime:  GB1239Time{Year: 24, Month: 3, Day: 15, Hour: 8, Minute: 0, Second: 0},
-			infoBodyRaw:  obdRaw,
-		}
-		block2 := RealTimeInfoBlock{
-			InfoTypeFlag: 0x02,
-			CollectTime:  GB1239Time{Year: 24, Month: 3, Day: 15, Hour: 8, Minute: 0, Second: 1},
-			infoBodyRaw:  engineRaw,
-		}
+		block1 := model.NewRealTimeInfoBlock(0x01, model.GB1239Time{Year: 24, Month: 3, Day: 15, Hour: 8, Minute: 0, Second: 0}, obdRaw)
+		block2 := model.NewRealTimeInfoBlock(0x02, model.GB1239Time{Year: 24, Month: 3, Day: 15, Hour: 8, Minute: 0, Second: 1}, engineRaw)
 
-		report := &RealTimeInfoReport{
-			DataTime:   GB1239Time{Year: 24, Month: 3, Day: 15, Hour: 8, Minute: 0, Second: 2},
+		report := &model.RealTimeInfoReport{
+			DataTime:   model.GB1239Time{Year: 24, Month: 3, Day: 15, Hour: 8, Minute: 0, Second: 2},
 			SerialNum:  1,
-			InfoBlocks: []RealTimeInfoBlock{block1, block2},
+			InfoBlocks: []model.RealTimeInfoBlock{block1, block2},
 		}
 		rptRaw, _ := report.Encode()
 		t.Logf("[SIM] Mixed report: %d bytes (%d blocks)", len(rptRaw), len(report.InfoBlocks))
 
-		// Verify decoding
-		var decoded RealTimeInfoReport
+		var decoded model.RealTimeInfoReport
 		if err := decoded.Decode(rptRaw); err != nil {
 			t.Fatalf("decode mixed report: %v", err)
 		}
-		if n := len(decoded.InfoBlocks); n > 0 {
-			t.Logf("[SIM] Mixed report decoded: %d blocks (parser limitation: multi-block boundary detection requires explicit body size per type)", n)
+		if n := len(decoded.InfoBlocks); n != 2 {
+			t.Errorf("expected 2 blocks, got %d", n)
 		}
+		t.Logf("[SIM] Mixed report decoded: %d blocks", len(decoded.InfoBlocks))
 	})
 }
 
 // ============================================================
 // Simulation Test 6: Multi-Message Type Round-Trip
-// 模拟所有命令类型完整编解码
 // ============================================================
 
 func TestSimulateAllCommandTypes(t *testing.T) {
@@ -511,46 +480,46 @@ func TestSimulateAllCommandTypes(t *testing.T) {
 
 	cases := []cmdCase{
 		{0x01, "VehicleLogin", func() []byte {
-			v, _ := NewVehicleLoginCode("89860000000000000001", vin).Encode()
+			v, _ := model.NewVehicleLoginCode("89860000000000000001", vin).Encode()
 			return v
 		}()},
 		{0x04, "VehicleLogout", func() []byte {
-			v, _ := NewVehicleLogoutCode(1).Encode()
+			v, _ := model.NewVehicleLogoutCode(1).Encode()
 			return v
 		}()},
 		{0x05, "TimeCalibration", func() []byte {
-			return GB1239Time{Year: 24, Month: 3, Day: 15, Hour: 8, Minute: 0, Second: 0}.Bytes()
+			return model.GB1239Time{Year: 24, Month: 3, Day: 15, Hour: 8, Minute: 0, Second: 0}.Bytes()
 		}()},
 		{0x06, "SupplVehicleInfo", func() []byte {
-			info := &SupplementaryVehicleInfo{
-				TorqueMode:      ScaledUint8{Raw: 1, Valid: true},
-				AccelPedal:      ScaledUint8{Raw: 50, Valid: true},
-				CumulativeFuel:  ScaledUint32{Raw: 10000, Valid: true},
-				DPFUpstreamTemp: ScaledInt16{Raw: 8000, Valid: true},
+			info := &model.SupplementaryVehicleInfo{
+				TorqueMode:      model.ScaledUint8{Raw: 1, Valid: true},
+				AccelPedal:      model.ScaledUint8{Raw: 50, Valid: true},
+				CumulativeFuel:  model.ScaledUint32{Raw: 10000, Valid: true},
+				DPFUpstreamTemp: model.ScaledInt16{Raw: 8000, Valid: true},
 			}
 			v, _ := info.Encode()
 			return v
 		}()},
 		{0x07, "PlatformLogin", func() []byte {
-			v, _ := NewPlatformLoginCode("admin", "pass123", 0x01).Encode()
+			v, _ := model.NewPlatformLoginCode("admin", "pass123", 0x01).Encode()
 			return v
 		}()},
 		{0x08, "PlatformLogout", func() []byte {
-			v, _ := NewPlatformLogoutCode(1).Encode()
+			v, _ := model.NewPlatformLogoutCode(1).Encode()
 			return v
 		}()},
 	}
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			p, _ := BuildPlatformPacket(c.cmd, 0xFE, vin, 0x01, c.data)
-			wire, _ := EncodePlatformPacket(p)
+			p, _ := packet.BuildPlatformPacket(c.cmd, 0xFE, vin, 0x01, c.data)
+			wire, _ := packet.EncodePlatformPacket(p)
 
-			if !VerifyChecksum(wire) {
+			if !packet.VerifyChecksum(wire) {
 				t.Fatalf("checksum failed")
 			}
 
-			parsed, err := ParsePlatformPacket(wire)
+			parsed, err := packet.ParsePlatformPacket(wire)
 			if err != nil {
 				t.Fatalf("parse: %v", err)
 			}
@@ -559,7 +528,7 @@ func TestSimulateAllCommandTypes(t *testing.T) {
 				t.Errorf("cmd flag: 0x%02x != 0x%02x", parsed.CommandFlag, c.cmd)
 			}
 
-			decoded, err := DecodeDataUnit(parsed.CommandFlag, parsed.DataUnit)
+			decoded, err := packet.DecodeDataUnit(parsed.CommandFlag, parsed.DataUnit)
 			if err != nil {
 				t.Fatalf("decode: %v", err)
 			}
@@ -574,20 +543,19 @@ func TestSimulateAllCommandTypes(t *testing.T) {
 // ============================================================
 
 func TestSimulateWithFixedClock(t *testing.T) {
-	// Override Clock for deterministic test
-	origClock := Clock
-	Clock = func() time.Time {
+	origClock := model.Clock
+	model.Clock = func() time.Time {
 		return time.Date(2024, 3, 15, 8, 0, 0, 0, time.FixedZone("CST", 8*3600))
 	}
-	defer func() { Clock = origClock }()
+	defer func() { model.Clock = origClock }()
 
-	login := NewVehicleLoginCode("ICCID001", "VIN001")
+	login := model.NewVehicleLoginCode("ICCID001", "VIN001")
 	if login.Time.Year != 24 || login.Time.Hour != 8 {
 		t.Errorf("fixed clock: expected year=24 hour=8, got year=%d hour=%d",
 			login.Time.Year, login.Time.Hour)
 	}
 
-	platformLogin := NewPlatformLoginCode("admin", "pass", 0x01)
+	platformLogin := model.NewPlatformLoginCode("admin", "pass", 0x01)
 	if platformLogin.AccessTime.Year != 24 {
 		t.Errorf("fixed clock platform: expected year=24, got year=%d",
 			platformLogin.AccessTime.Year)
@@ -598,161 +566,20 @@ func TestSimulateWithFixedClock(t *testing.T) {
 }
 
 // ============================================================
-// Benchmark: Full pipeline encode → packet → decode
+// Benchmark: Full pipeline encode -> packet -> decode
 // ============================================================
 
 func BenchmarkFullPipeline(b *testing.B) {
 	vin := "BENCHVIN000000001"
-	e := NewEngineDataDPFSCR(60, 1500, 101.3, 18, 350, 180, 260, 240, 4.5, 88, 75, 35, 12, 120.0, 116.39, 39.91, 50000, true, true)
+	e := model.NewEngineDataDPFSCR(60, 1500, 101.3, 18, 350, 180, 260, 240, 4.5, 88, 75, 35, 12, 120.0, 116.39, 39.91, 50000, true, true)
 	engineRaw, _ := e.Encode()
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		p, _ := BuildPlatformPacket(0x02, 0xFE, vin, 0x01, engineRaw)
-		wire, _ := EncodePlatformPacket(p)
-		_ = VerifyChecksum(wire)
-		parsed, _ := ParsePlatformPacket(wire)
-		_, _ = DecodeDataUnit(parsed.CommandFlag, parsed.DataUnit)
+		p, _ := packet.BuildPlatformPacket(0x02, 0xFE, vin, 0x01, engineRaw)
+		wire, _ := packet.EncodePlatformPacket(p)
+		_ = packet.VerifyChecksum(wire)
+		parsed, _ := packet.ParsePlatformPacket(wire)
+		_, _ = packet.DecodeDataUnit(parsed.CommandFlag, parsed.DataUnit)
 	}
-}
-
-// BuildPlatformPacket and EncodePlatformPacket are in packet package;
-// we re-export them here for benchmark use.
-func BuildPlatformPacket(cmd, resp byte, vin string, enc byte, data []byte) (*PlatformPacket, error) {
-	if len(vin) > 17 {
-		vin = vin[:17]
-	}
-	return &PlatformPacket{
-		StartMarker:  "~~",
-		CommandFlag:  cmd,
-		ResponseFlag: resp,
-		VIN:          vin,
-		EncryptMode:  enc,
-		DataLength:   uint16(len(data)),
-		DataUnit:     data,
-	}, nil
-}
-
-func EncodePlatformPacket(p *PlatformPacket) ([]byte, error) {
-	totalSize := PlatformPacketHeaderSize + int(p.DataLength) + 1
-	buf := make([]byte, totalSize)
-	buf[0] = 0x7e
-	buf[1] = 0x7e
-	buf[2] = p.CommandFlag
-	buf[3] = p.ResponseFlag
-	vin := p.VIN
-	if len(vin) < 17 {
-		pad := make([]byte, 17)
-		copy(pad, vin)
-		vin = string(pad)
-	}
-	copy(buf[4:21], vin)
-	buf[21] = p.EncryptMode
-	binary.BigEndian.PutUint16(buf[22:24], p.DataLength)
-	if p.DataLength > 0 {
-		copy(buf[24:24+p.DataLength], p.DataUnit)
-	}
-	// BCC
-	var bcc byte
-	for _, b := range buf[2 : 24+int(p.DataLength)] {
-		bcc ^= b
-	}
-	buf[24+int(p.DataLength)] = bcc
-	return buf, nil
-}
-
-func VerifyChecksum(data []byte) bool {
-	if len(data) < PlatformPacketHeaderSize+1 {
-		return false
-	}
-	dataLen := binary.BigEndian.Uint16(data[22:24])
-	offs := 24 + int(dataLen)
-	if offs >= len(data) {
-		return false
-	}
-	var bcc byte
-	for _, b := range data[2:offs] {
-		bcc ^= b
-	}
-	return bcc == data[offs]
-}
-
-func ParsePlatformPacket(data []byte) (*PlatformPacket, error) {
-	if len(data) < PlatformPacketHeaderSize+1 {
-		return nil, ErrShortData("PlatformPacket", PlatformPacketHeaderSize+1, len(data))
-	}
-	if data[0] != 0x7e || data[1] != 0x7e {
-		return nil, ErrInvalidFrame("invalid start marker")
-	}
-	p := &PlatformPacket{
-		StartMarker:  "~~",
-		CommandFlag:  data[2],
-		ResponseFlag: data[3],
-		VIN:          trimString(data[4:21]),
-		EncryptMode:  data[21],
-		DataLength:   binary.BigEndian.Uint16(data[22:24]),
-	}
-	if p.DataLength > 0 && int(24+p.DataLength) <= len(data) {
-		p.DataUnit = make([]byte, p.DataLength)
-		copy(p.DataUnit, data[24:24+p.DataLength])
-	}
-	p.Checksum = data[24+int(p.DataLength)]
-	return p, nil
-}
-
-func DecodeDataUnit(cmd byte, data []byte) (interface{}, error) {
-	switch cmd {
-	case 0x01:
-		v := &VehicleLoginCode{}
-		if err := v.Decode(data); err != nil {
-			return nil, err
-		}
-		return v, nil
-	case 0x02:
-		// RealTimeInfoReport — for raw engine data, try ParseInfoBody with type 0x02
-		engine := &EngineDataDPFSCR{}
-		if err := engine.Decode(data); err != nil {
-			return ParseInfoBody(0x02, data) // fallback
-		}
-		return engine, nil
-	case 0x04:
-		v := &VehicleLogoutCode{}
-		if err := v.Decode(data); err != nil {
-			return nil, err
-		}
-		return v, nil
-	case 0x05:
-		t, err := ParseGB1239Time(data)
-		if err != nil {
-			return nil, err
-		}
-		return &TerminalTimeCalibrationCode{Time: t}, nil
-	case 0x06:
-		v := &SupplementaryVehicleInfo{}
-		if err := v.Decode(data); err != nil {
-			return nil, err
-		}
-		return v, nil
-	case 0x07:
-		p := &PlatformLoginCode{}
-		if err := p.Decode(data); err != nil {
-			return nil, err
-		}
-		return p, nil
-	case 0x08:
-		p := &PlatformLogoutCode{}
-		if err := p.Decode(data); err != nil {
-			return nil, err
-		}
-		return p, nil
-	default:
-		return ParseInfoBody(cmd, data)
-	}
-}
-
-func CheckChecksum(data []byte) error {
-	if !VerifyChecksum(data) {
-		return fmt.Errorf("BCC checksum mismatch")
-	}
-	return nil
 }

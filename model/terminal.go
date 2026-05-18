@@ -590,6 +590,10 @@ func (r *RealTimeInfoBlock) Size() int {
 	return 1 + GB1239TimeLen + bodyLen
 }
 
+func (r *RealTimeInfoBlock) BodyRaw() []byte {
+	return r.infoBodyRaw
+}
+
 // RealTimeInfoReport 实时信息上报 (Section 4.5.2)
 type RealTimeInfoReport struct {
 	DataTime      GB1239Time         `hj1239:"offset:0,len:6,desc:数据发送时间"`
@@ -637,20 +641,25 @@ func (r *RealTimeInfoReport) Decode(b []byte) error {
 	}
 	r.SerialNum = binary.BigEndian.Uint16(b[6:8])
 
-	// Parse info blocks - each block starts with info type flag
 	pos := 8
-	for pos < len(b) {
-		_ = b[pos:] // signature detection reserved for future use
-		var block RealTimeInfoBlock
-		if pos+7 > len(b) {
+	for pos+7 <= len(b) {
+		infoType := b[pos]
+		collectTime, err := ParseGB1239Time(b[pos+1 : pos+7])
+		if err != nil {
 			break
 		}
-		blockData := b[pos:]
-		if err := block.Decode(blockData); err != nil {
+		bodySize := infoBodySize(infoType, b[pos+7:])
+		if bodySize < 0 || pos+7+bodySize > len(b) {
 			break
 		}
+		block := RealTimeInfoBlock{
+			InfoTypeFlag: infoType,
+			CollectTime:  collectTime,
+			infoBodyRaw:  make([]byte, bodySize),
+		}
+		copy(block.infoBodyRaw, b[pos+7:pos+7+bodySize])
 		r.InfoBlocks = append(r.InfoBlocks, block)
-		pos += block.Size()
+		pos += 7 + bodySize
 	}
 	return nil
 }
@@ -730,6 +739,8 @@ func (v *VehicleInfoResponseCode) Decode(b []byte) error {
 }
 
 func (v *VehicleInfoResponseCode) Size() int { return 2 }
+
+const VehicleInfoResponseCodeSize = 2
 
 // -------------------------------
 // Section 4.5.4: 车辆终端补充参数 (Annex A)
@@ -887,6 +898,31 @@ func ParsePositionStatus(raw uint8) PositionStatus { return PositionStatus{Raw: 
 // -------------------------------
 // Info body parse dispatch for RealTimeInfoBlock
 // -------------------------------
+
+// infoBodySize returns the fixed body size for a given info type flag.
+// Returns -1 if the type is unknown or the data is too short to determine size.
+func infoBodySize(flag byte, data []byte) int {
+	switch flag {
+	case 0x01: // OBD — variable length, needs header parse
+		if len(data) < 96 {
+			return -1
+		}
+		dtcCnt := int(data[95])
+		return 96 + dtcCnt*4
+	case 0x02: // Engine DPF/SCR
+		return EngineDataDPFSCRSize
+	case 0x03: // Engine TWC
+		return EngineDataTWCSize
+	case 0x04: // Engine Hybrid
+		return EngineDataHybridSize
+	case 0x05: // Engine TWC+NOx
+		return EngineDataTWCNOxSize
+	case 0x80: // Supplement
+		return SupplementaryVehicleInfoSize
+	default:
+		return -1
+	}
+}
 
 // ParseInfoBody parses the raw body bytes into a typed struct based on InfoTypeFlag.
 func ParseInfoBody(flag byte, raw []byte) (interface{}, error) {
@@ -1049,6 +1085,15 @@ func NewEngineDataTWC(speed, engineSpeed, atmPressure, fuelFlow float64,
 		Longitude:          NewScaledUint32(longitude, 0.000001, 0),
 		Latitude:           NewScaledUint32(latitude, 0.000001, 0),
 		Odometer:           NewScaledUint32(odometer, 0.1, 0),
+	}
+}
+
+// NewRealTimeInfoBlock creates a RealTimeInfoBlock with the given raw body.
+func NewRealTimeInfoBlock(infoType byte, collectTime GB1239Time, bodyRaw []byte) RealTimeInfoBlock {
+	return RealTimeInfoBlock{
+		InfoTypeFlag: infoType,
+		CollectTime:  collectTime,
+		infoBodyRaw:  bodyRaw,
 	}
 }
 

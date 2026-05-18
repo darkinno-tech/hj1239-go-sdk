@@ -25,6 +25,10 @@ type PlatformPacket struct {
 
 const PlatformPacketHeaderSize = 24
 
+func (p *PlatformPacket) Size() int {
+	return PlatformPacketHeaderSize + int(p.DataLength) + 1
+}
+
 // IsRequest 判断是否为请求包
 func (p *PlatformPacket) IsRequest() bool {
 	return p.ResponseFlag == 0xFE
