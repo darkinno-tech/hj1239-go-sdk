@@ -75,13 +75,40 @@ data, _ := engine.Encode()
 // data 为 37 字节二进制数据 (Table 5)
 ```
 
+### 4. 加密
+
+```go
+import "github.com/DarkInno/hj1239-go-sdk/crypto"
+
+key := []byte("0123456789abcdef")
+aes, _ := crypto.NewAES128CBCEncryptor(key, nil)
+
+reg := crypto.NewRegistry()
+reg.Register(aes)
+
+encrypted, _ := reg.Encrypt(crypto.ModeAES128, rawData)
+decrypted, _ := reg.Decrypt(crypto.ModeAES128, encrypted)
+```
+
+### 5. TCP 帧转义
+
+```go
+import "github.com/DarkInno/hj1239-go-sdk/transport"
+
+escaped := transport.Escape(rawBytes)
+framed := transport.Frame(rawBytes)  // 添加 0x7E 0x7E 标记 + 转义
+unframed, _ := transport.Deframe(framed)
+```
+
 ## 包结构
 
 | 包 | 说明 |
 |----|------|
-| `model` | 数据类型定义：车载终端/企业平台/附录A/B |
+| `model` | 数据类型定义：车载终端/企业平台/告警/远程控制/文件上传 |
 | `codec` | 二进制编解码工具：字节序、缩放、BCC校验 |
 | `packet` | 数据包组帧/解帧 (5.6.3节)，命令分发 |
+| `crypto` | 加密/解密：AES128-CBC、RSA-OAEP，SM2/SM4 扩展接口 |
+| `transport` | TCP 帧转义/去转义 (0x7E 字节填充) |
 | `cmd` | 命令常量定义 |
 | `gen` | 代码生成器，从 struct tag 生成 Marshal/Unmarshal |
 
@@ -99,6 +126,8 @@ data, _ := engine.Encode()
 | `EngineDataTWCNOx` | 表7 | 32 字节 |
 | `EngineDataHybrid` | 表8 | 8 字节 |
 | `RealTimeInfoReport` | 表2 | 可变 |
+| `HistoricalInfoCode` | 历史信息 | 可变 |
+| `AlarmInfoCode` | 告警信息 | 可变 |
 | `VehicleInfoCode` | 表12 | 可变 |
 | `VehicleInfoResponseCode` | 表13 | 2 字节 |
 | `TerminalSupplementCode` | 附录A | 17 字节 |
@@ -111,6 +140,21 @@ data, _ := engine.Encode()
 | `PlatformLoginCode` | 表19 | 41 字节 |
 | `PlatformLogoutCode` | 表20 | 8 字节 |
 | `KeyExchangeCode` | 表21 | 可变 |
+
+### 下行命令 — 平台→终端
+
+| 类型 | 说明 | 大小 |
+|------|------|------|
+| `ControlCode` | 远程控制请求（查询/设置/升级/重启） | 可变 |
+| `ControlResponseCode` | 终端控制应答 | 可变 |
+
+### 文件上传
+
+| 类型 | 说明 | 大小 |
+|------|------|------|
+| `FileUploadNotificationCode` | 文件上传通知 | 可变 |
+| `FileDataBlockCode` | 文件数据块 | 可变 |
+| `FileUploadCompleteCode` | 文件上传完成 | 可变 |
 
 ## 缩放类型
 
@@ -126,13 +170,15 @@ data, _ := engine.Encode()
 
 ## 测试数据
 
-### 单元测试 (38 项, 0 失败)
+### 单元测试 (全部通过)
 
 | 包 | 测试数 | 内容 |
 |----|--------|------|
 | `codec` | 7 | 字节读写、uint16/32、字符串、BCC、缩放、越界 |
-| `model` | 23 | 时间、缩放、发动机数据、OBD、MIL、错误类型、7个模拟场景 |
+| `model` | 32 | 时间、缩放、发动机数据、OBD、MIL、错误、历史/告警/控制/文件、7个模拟场景 |
 | `packet` | 8 | 平台包编解码、校验、损坏检测 |
+| `crypto` | 5 | AES128-CBC、RSA-OAEP、随机IV、未知模式 |
+| `transport` | 4 | 转义/去转义、组帧/解帧 |
 
 ### 模拟场景
 
@@ -181,9 +227,7 @@ BenchmarkFullPipeline              4.6M ops/s   238.6 ns/op
 
 ### 已知限制
 
-- 多信息块实时上报解析需明确每种类型大小
-- 加密模式 (SM2/SM4/RSA/AES128) 已声明但未实现
-- TCP 帧转义 (0x7E 字节填充) 留给传输层处理
+- SM2/SM4 加密需要第三方国密库（如 `github.com/tjfoc/gmsm`）——实现 `crypto.Encryptor` 接口即可启用
 
 ---
 

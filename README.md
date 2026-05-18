@@ -89,13 +89,40 @@ var decoded model.EngineDataDPFSCR
 decoded.Decode(data)
 ```
 
+### 4. Encryption
+
+```go
+import "github.com/DarkInno/hj1239-go-sdk/crypto"
+
+key := []byte("0123456789abcdef")
+aes, _ := crypto.NewAES128CBCEncryptor(key, nil)
+
+reg := crypto.NewRegistry()
+reg.Register(aes)
+
+encrypted, _ := reg.Encrypt(crypto.ModeAES128, rawData)
+decrypted, _ := reg.Decrypt(crypto.ModeAES128, encrypted)
+```
+
+### 5. TCP Frame Escaping
+
+```go
+import "github.com/DarkInno/hj1239-go-sdk/transport"
+
+escaped := transport.Escape(rawBytes)
+framed := transport.Frame(rawBytes)  // adds 0x7E 0x7E markers + escapes
+unframed, _ := transport.Deframe(framed)
+```
+
 ## Package Structure
 
 | Package | Description |
 |---------|-------------|
-| `model` | All data type definitions: vehicle terminal data, platform data, Annex A/B |
+| `model` | All data type definitions: vehicle terminal, platform, alarms, control, file upload |
 | `codec` | Binary encoding/decoding utilities: byte order, scaling, BCC |
 | `packet` | Packet framing/deframing (Section 5.6.3), command dispatch |
+| `crypto` | Encryption/decryption: AES128-CBC, RSA-OAEP, SM2/SM4 extension point |
+| `transport` | TCP frame escaping/unescaping (0x7E byte stuffing) |
 | `cmd` | Command constant definitions |
 | `gen` | Code generator for MarshalBinary/UnmarshalBinary from struct tags |
 
@@ -113,6 +140,8 @@ decoded.Decode(data)
 | `EngineDataTWCNOx` | Table 7 | 32 bytes |
 | `EngineDataHybrid` | Table 8 | 8 bytes |
 | `RealTimeInfoReport` | Table 2 | Variable |
+| `HistoricalInfoCode` | — | Variable |
+| `AlarmInfoCode` | — | Variable |
 | `VehicleInfoCode` | Table 12 | Variable |
 | `VehicleInfoResponseCode` | Table 13 | 2 bytes |
 | `TerminalSupplementCode` | Annex A | 17 bytes |
@@ -125,6 +154,21 @@ decoded.Decode(data)
 | `PlatformLoginCode` | Table 19 | 41 bytes |
 | `PlatformLogoutCode` | Table 20 | 8 bytes |
 | `KeyExchangeCode` | Table 21 | Variable |
+
+### Downstream Commands — Platform → Terminal
+
+| Type | Description | Size |
+|------|-------------|------|
+| `ControlCode` | Remote control request (query/set/upgrade/restart) | Variable |
+| `ControlResponseCode` | Terminal control response | Variable |
+
+### File Upload
+
+| Type | Description | Size |
+|------|-------------|------|
+| `FileUploadNotificationCode` | File upload notification | Variable |
+| `FileDataBlockCode` | File data block | Variable |
+| `FileUploadCompleteCode` | File upload completion | Variable |
 
 ### Annex B — Supplementary Vehicle Info
 
@@ -161,12 +205,14 @@ go run cmd/gen/main.go ./model
 
 ## Test Data & Performance
 
-### Unit Tests (38 tests, 0 failures)
+### Unit Tests (all passing)
 
 ```
-ok  github.com/DarkInno/hj1239-go-sdk/codec    7 tests
-ok  github.com/DarkInno/hj1239-go-sdk/model    23 tests
-ok  github.com/DarkInno/hj1239-go-sdk/packet   8 tests
+ok  github.com/DarkInno/hj1239-go-sdk/codec      7 tests
+ok  github.com/DarkInno/hj1239-go-sdk/crypto      5 tests
+ok  github.com/DarkInno/hj1239-go-sdk/model      32 tests
+ok  github.com/DarkInno/hj1239-go-sdk/packet      8 tests
+ok  github.com/DarkInno/hj1239-go-sdk/transport    4 tests
 ```
 
 ### Simulation Tests
@@ -221,9 +267,7 @@ BenchmarkFullPipeline (E→P→C→D)   4.6M ops/s   238.6 ns/op
 
 ### Known Limitations
 
-- Multi-block `RealTimeInfoReport` body parsing requires explicit per-type body size
-- Encryption (SM2/SM4/RSA/AES128) declared, not implemented — plaintext only
-- TCP frame escaping (0x7E byte stuffing) left to transport layer
+- SM2/SM4 encryption requires external national cryptography library (e.g., `github.com/tjfoc/gmsm`) — implement `crypto.Encryptor` interface to enable
 
 ---
 
