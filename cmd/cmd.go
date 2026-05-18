@@ -10,6 +10,10 @@ const (
 	CmdSupplementaryInfo      byte = 0x06 // 补充车辆信息
 	CmdVehicleInfo            byte = 0x07 // 车辆信息
 	CmdVehicleInfoResponse    byte = 0x08 // 车辆信息应答
+	CmdAlarmInfo              byte = 0x0A // 告警信息上报
+	CmdFileUploadNotification byte = 0x0B // 文件上传通知
+	CmdFileDataBlock          byte = 0x0C // 文件数据块
+	CmdFileUploadComplete     byte = 0x0D // 文件上传完成
 )
 
 // 企业平台命令单元 (上行/下行)
@@ -17,6 +21,12 @@ const (
 	CmdPlatformLogin  byte = 0x07 // 企业平台登录
 	CmdPlatformLogout byte = 0x08 // 企业平台登出
 	CmdKeyExchange    byte = 0x09 // 密钥交换
+)
+
+// 远程控制命令 (平台 → 终端下行)
+const (
+	CmdControlRequest  byte = 0x81 // 远程控制请求
+	CmdControlResponse byte = 0x82 // 远程控制应答
 )
 
 // 响应标志

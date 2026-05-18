@@ -165,6 +165,13 @@ func DecodeDataUnit(cmdFlag byte, data []byte) (interface{}, error) {
 		}
 		return r, nil
 
+	case 0x03: // 历史信息上报
+		h := &model.HistoricalInfoCode{}
+		if err := h.Decode(data); err != nil {
+			return nil, err
+		}
+		return h, nil
+
 	case 0x04: // 车辆登出
 		v := &model.VehicleLogoutCode{}
 		if err := v.Decode(data); err != nil {
@@ -188,21 +195,20 @@ func DecodeDataUnit(cmdFlag byte, data []byte) (interface{}, error) {
 
 	case 0x07: // 车辆信息 / 企业平台登录
 		if len(data) >= model.PlatformLoginCodeSize {
-			// Check if it looks like a platform login (has username/password fields)
 			p := &model.PlatformLoginCode{}
-			if err := p.Decode(data); err != nil {
-				// Try vehicle info
-				v := &model.VehicleInfoCode{}
-				if err := v.Decode(data); err != nil {
-					return nil, fmt.Errorf("failed to decode cmd 0x07: %w", err)
-				}
-				return v, nil
+			if err := p.Decode(data); err == nil {
+				return p, nil
 			}
-			return p, nil
 		}
+		// Fallback to vehicle info code
+		v := &model.VehicleInfoCode{}
+		if err := v.Decode(data); err != nil {
+			return nil, fmt.Errorf("failed to decode cmd 0x07: %w", err)
+		}
+		return v, nil
 
 	case 0x08: // 车辆信息应答 / 企业平台登出
-		if len(data) == 2 {
+		if len(data) == model.VehicleInfoResponseCodeSize {
 			v := &model.VehicleInfoResponseCode{}
 			if err := v.Decode(data); err != nil {
 				return nil, err
@@ -221,6 +227,48 @@ func DecodeDataUnit(cmdFlag byte, data []byte) (interface{}, error) {
 			return nil, err
 		}
 		return k, nil
+
+	case 0x0A: // 告警信息上报
+		a := &model.AlarmInfoCode{}
+		if err := a.Decode(data); err != nil {
+			return nil, err
+		}
+		return a, nil
+
+	case 0x0B: // 文件上传通知
+		f := &model.FileUploadNotificationCode{}
+		if err := f.Decode(data); err != nil {
+			return nil, err
+		}
+		return f, nil
+
+	case 0x0C: // 文件数据块
+		f := &model.FileDataBlockCode{}
+		if err := f.Decode(data); err != nil {
+			return nil, err
+		}
+		return f, nil
+
+	case 0x0D: // 文件上传完成
+		f := &model.FileUploadCompleteCode{}
+		if err := f.Decode(data); err != nil {
+			return nil, err
+		}
+		return f, nil
+
+	case 0x81: // 远程控制请求 (下行)
+		c := &model.ControlCode{}
+		if err := c.Decode(data); err != nil {
+			return nil, err
+		}
+		return c, nil
+
+	case 0x82: // 远程控制应答 (上行)
+		c := &model.ControlResponseCode{}
+		if err := c.Decode(data); err != nil {
+			return nil, err
+		}
+		return c, nil
 	}
 
 	return data, model.ErrUnknownCmd(cmdFlag)
