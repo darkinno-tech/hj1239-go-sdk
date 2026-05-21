@@ -20,7 +20,7 @@ covering both vehicle terminal (Section 4) and enterprise platform (Section 5) d
 ## Installation
 
 ```bash
-go get github.com/DarkInno/hj1239-go-sdk
+go get github.com/DarkInno/hj1239-go-sdk@v1.0.0
 ```
 
 Requires Go 1.21+.

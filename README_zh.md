@@ -18,7 +18,7 @@
 ## 安装
 
 ```bash
-go get github.com/DarkInno/hj1239-go-sdk
+go get github.com/DarkInno/hj1239-go-sdk@v1.0.0
 ```
 
 要求 Go 1.21+。
