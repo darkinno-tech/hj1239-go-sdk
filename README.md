@@ -1,6 +1,6 @@
 # hj1239-go-sdk
 
-> *"We are DarkInno. Like a stout beer, our best ideas are brewed slowly in the dark, away from the hype."*
+> *"We are im10furry. Like a stout beer, our best ideas are brewed slowly in the dark, away from the hype."*
 
 [![Go Version](https://img.shields.io/badge/Go-1.21%2B-00ADD8?logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-MIT-green)](./LICENSE)
@@ -20,7 +20,7 @@ covering both vehicle terminal (Section 4) and enterprise platform (Section 5) d
 ## Installation
 
 ```bash
-go get github.com/DarkInno/hj1239-go-sdk@v1.0.0
+go get github.com/im10furry/hj1239-go-sdk@v1.0.0
 ```
 
 Requires Go 1.21+.
@@ -34,8 +34,8 @@ package main
 
 import (
     "fmt"
-    "github.com/DarkInno/hj1239-go-sdk/model"
-    "github.com/DarkInno/hj1239-go-sdk/packet"
+    "github.com/im10furry/hj1239-go-sdk/model"
+    "github.com/im10furry/hj1239-go-sdk/packet"
 )
 
 func main() {
@@ -92,7 +92,7 @@ decoded.Decode(data)
 ### 4. Encryption
 
 ```go
-import "github.com/DarkInno/hj1239-go-sdk/crypto"
+import "github.com/im10furry/hj1239-go-sdk/crypto"
 
 key := []byte("0123456789abcdef")
 aes, _ := crypto.NewAES128CBCEncryptor(key, nil)
@@ -107,7 +107,7 @@ decrypted, _ := reg.Decrypt(crypto.ModeAES128, encrypted)
 ### 5. TCP Frame Escaping
 
 ```go
-import "github.com/DarkInno/hj1239-go-sdk/transport"
+import "github.com/im10furry/hj1239-go-sdk/transport"
 
 escaped := transport.Escape(rawBytes)
 framed := transport.Frame(rawBytes)  // adds 0x7E 0x7E markers + escapes
@@ -200,7 +200,7 @@ Generate MarshalBinary/UnmarshalBinary methods from struct tags:
 go run cmd/gen/main.go ./model
 
 # Or via go:generate
-//go:generate go run github.com/DarkInno/hj1239-go-sdk/cmd/gen ./model
+//go:generate go run github.com/im10furry/hj1239-go-sdk/cmd/gen ./model
 ```
 
 ## Test Data & Performance
@@ -208,11 +208,11 @@ go run cmd/gen/main.go ./model
 ### Unit Tests (all passing)
 
 ```
-ok  github.com/DarkInno/hj1239-go-sdk/codec      7 tests
-ok  github.com/DarkInno/hj1239-go-sdk/crypto      5 tests
-ok  github.com/DarkInno/hj1239-go-sdk/model      32 tests
-ok  github.com/DarkInno/hj1239-go-sdk/packet      8 tests
-ok  github.com/DarkInno/hj1239-go-sdk/transport    4 tests
+ok  github.com/im10furry/hj1239-go-sdk/codec      7 tests
+ok  github.com/im10furry/hj1239-go-sdk/crypto      5 tests
+ok  github.com/im10furry/hj1239-go-sdk/model      32 tests
+ok  github.com/im10furry/hj1239-go-sdk/packet      8 tests
+ok  github.com/im10furry/hj1239-go-sdk/transport    4 tests
 ```
 
 ### Simulation Tests
@@ -272,11 +272,11 @@ BenchmarkFullPipeline (E→P→C→D)   4.6M ops/s   238.6 ns/op
 ---
 
 <p align="center">
-  <a href="https://github.com/DarkInno/hj1239-go-sdk">
-    <img src="https://img.shields.io/github/stars/DarkInno/hj1239-go-sdk?style=social" alt="GitHub stars">
+  <a href="https://github.com/im10furry/hj1239-go-sdk">
+    <img src="https://img.shields.io/github/stars/im10furry/hj1239-go-sdk?style=social" alt="GitHub stars">
   </a>
   &nbsp;
-  <a href="https://github.com/DarkInno/hj1239-go-sdk/blob/main/LICENSE">
+  <a href="https://github.com/im10furry/hj1239-go-sdk/blob/main/LICENSE">
     <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT License">
   </a>
 </p>

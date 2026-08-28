@@ -4,8 +4,8 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/DarkInno/hj1239-go-sdk/codec"
-	"github.com/DarkInno/hj1239-go-sdk/model"
+	"github.com/im10furry/hj1239-go-sdk/codec"
+	"github.com/im10furry/hj1239-go-sdk/model"
 )
 
 // ParsePlatformPacket 从字节流解析企业平台数据包

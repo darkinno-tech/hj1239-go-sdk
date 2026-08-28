@@ -1,3 +1,3 @@
-module github.com/DarkInno/hj1239-go-sdk
+module github.com/im10furry/hj1239-go-sdk
 
 go 1.21

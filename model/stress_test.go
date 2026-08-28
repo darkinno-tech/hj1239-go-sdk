@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/DarkInno/hj1239-go-sdk/model"
-	"github.com/DarkInno/hj1239-go-sdk/packet"
+	"github.com/im10furry/hj1239-go-sdk/model"
+	"github.com/im10furry/hj1239-go-sdk/packet"
 )
 
 // ============================================================
