@@ -1,6 +1,6 @@
 # hj1239-go-sdk
 
-> *"我们是 im10furry。如同浓烈世涛啤酒，我们最好的想法在黑暗中缓慢酝酿，远离喧嚣。"*
+> *"我们是 darkinno-tech。如同浓烈世涛啤酒，我们最好的想法在黑暗中缓慢酝酿，远离喧嚣。"*
 
 [![Go Version](https://img.shields.io/badge/Go-1.21%2B-00ADD8?logo=go)](https://go.dev/)
 [![License](https://img.shields.io/badge/License-MIT-green)](./LICENSE)
@@ -18,7 +18,7 @@
 ## 安装
 
 ```bash
-go get github.com/im10furry/hj1239-go-sdk@v1.0.0
+go get github.com/darkinno-tech/hj1239-go-sdk@v1.0.0
 ```
 
 要求 Go 1.21+。
@@ -29,8 +29,8 @@ go get github.com/im10furry/hj1239-go-sdk@v1.0.0
 
 ```go
 import (
-    "github.com/im10furry/hj1239-go-sdk/model"
-    "github.com/im10furry/hj1239-go-sdk/packet"
+    "github.com/darkinno-tech/hj1239-go-sdk/model"
+    "github.com/darkinno-tech/hj1239-go-sdk/packet"
 )
 
 // 构建企业平台登录包
@@ -78,7 +78,7 @@ data, _ := engine.Encode()
 ### 4. 加密
 
 ```go
-import "github.com/im10furry/hj1239-go-sdk/crypto"
+import "github.com/darkinno-tech/hj1239-go-sdk/crypto"
 
 key := []byte("0123456789abcdef")
 aes, _ := crypto.NewAES128CBCEncryptor(key, nil)
@@ -93,7 +93,7 @@ decrypted, _ := reg.Decrypt(crypto.ModeAES128, encrypted)
 ### 5. TCP 帧转义
 
 ```go
-import "github.com/im10furry/hj1239-go-sdk/transport"
+import "github.com/darkinno-tech/hj1239-go-sdk/transport"
 
 escaped := transport.Escape(rawBytes)
 framed := transport.Frame(rawBytes)  // 添加 0x7E 0x7E 标记 + 转义
@@ -232,11 +232,11 @@ BenchmarkFullPipeline              4.6M ops/s   238.6 ns/op
 ---
 
 <p align="center">
-  <a href="https://github.com/im10furry/hj1239-go-sdk">
-    <img src="https://img.shields.io/github/stars/im10furry/hj1239-go-sdk?style=social" alt="GitHub stars">
+  <a href="https://github.com/darkinno-tech/hj1239-go-sdk">
+    <img src="https://img.shields.io/github/stars/darkinno-tech/hj1239-go-sdk?style=social" alt="GitHub stars">
   </a>
   &nbsp;
-  <a href="https://github.com/im10furry/hj1239-go-sdk/blob/main/LICENSE">
+  <a href="https://github.com/darkinno-tech/hj1239-go-sdk/blob/main/LICENSE">
     <img src="https://img.shields.io/badge/License-MIT-green" alt="MIT License">
   </a>
 </p>

@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"testing"
 
-	"github.com/im10furry/hj1239-go-sdk/transport"
+	"github.com/darkinno-tech/hj1239-go-sdk/transport"
 )
 
 func TestEscapeUnescape(t *testing.T) {

@@ -4,8 +4,8 @@ import (
 	"encoding/binary"
 	"fmt"
 
-	"github.com/im10furry/hj1239-go-sdk/model"
-	"github.com/im10furry/hj1239-go-sdk/packet"
+	"github.com/darkinno-tech/hj1239-go-sdk/model"
+	"github.com/darkinno-tech/hj1239-go-sdk/packet"
 )
 
 func now() model.GB1239Time {

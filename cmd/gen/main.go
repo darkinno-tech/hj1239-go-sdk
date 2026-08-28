@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/im10furry/hj1239-go-sdk/gen"
+	"github.com/darkinno-tech/hj1239-go-sdk/gen"
 )
 
 func main() {

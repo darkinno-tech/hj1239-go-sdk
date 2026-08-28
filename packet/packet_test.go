@@ -3,7 +3,7 @@ package packet
 import (
 	"testing"
 
-	"github.com/im10furry/hj1239-go-sdk/model"
+	"github.com/darkinno-tech/hj1239-go-sdk/model"
 )
 
 func TestEncodeDecodePlatformPacket(t *testing.T) {

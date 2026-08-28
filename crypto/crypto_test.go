@@ -6,7 +6,7 @@ import (
 	"crypto/rsa"
 	"testing"
 
-	"github.com/im10furry/hj1239-go-sdk/crypto"
+	"github.com/darkinno-tech/hj1239-go-sdk/crypto"
 )
 
 func TestRegistryNoop(t *testing.T) {
